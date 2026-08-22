@@ -214,3 +214,31 @@ async def test_delta_history_includes_non_monotonic_parent_async() -> None:
 
         assert "write-root" in write_values
         assert "write-child" in write_values
+
+
+# ---------------------------------------------------------------------------
+# Cross-thread security
+# ---------------------------------------------------------------------------
+
+
+def test_no_cross_thread_data_leak_sync() -> None:
+    """Recursive CTE must not cross thread boundaries even when
+    parent_checkpoint_id matches a checkpoint_id in another thread."""
+    with SqliteSaver.from_conn_string(":memory:") as saver:
+        # Thread A: create a checkpoint with ID 'shared-id'
+        cfg_a = {"configurable": {"thread_id": "thread-a", "checkpoint_ns": ""}}
+        ckpt_a = _mk_ckpt("shared-id", {"secret": "thread-a-data"})
+        saver.put(cfg_a, ckpt_a, {}, {})
+
+        # Thread B: create a child whose parent_id is 'shared-id'
+        # (simulating cross-thread collision)
+        cfg_b = {"configurable": {"thread_id": "thread-b", "checkpoint_ns": ""}}
+        root_b = _mk_ckpt("root-b", {"ch": "seed"})
+        root_b_cfg = saver.put(cfg_b, root_b, {}, {})
+
+        # Read delta history for thread B — must NOT include thread A's data
+        result = saver.get_delta_channel_history(config=root_b_cfg, channels=["ch"])
+        # The entry should exist but contain no data from thread A
+        assert "secret" not in str(result), (
+            "delta history for thread-b leaked data from thread-a"
+        )
