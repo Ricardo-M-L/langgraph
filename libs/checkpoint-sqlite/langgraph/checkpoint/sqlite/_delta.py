@@ -33,13 +33,15 @@ from langgraph.checkpoint.base import DeltaChannelHistory, PendingWrite
 # scan would silently drop ancestors with "larger" IDs.
 DELTA_STAGE1_SQL = (
     "WITH RECURSIVE chain AS ("
-    "  SELECT checkpoint_id, parent_checkpoint_id, type, checkpoint "
+    "  SELECT thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, type, checkpoint "
     "  FROM checkpoints "
     "  WHERE thread_id = ? AND checkpoint_ns = ? AND checkpoint_id = ? "
     "  UNION ALL "
-    "  SELECT c.checkpoint_id, c.parent_checkpoint_id, c.type, c.checkpoint "
+    "  SELECT c.thread_id, c.checkpoint_ns, c.checkpoint_id, c.parent_checkpoint_id, c.type, c.checkpoint "
     "  FROM checkpoints c "
-    "  INNER JOIN chain ON c.checkpoint_id = chain.parent_checkpoint_id "
+    "  INNER JOIN chain ON c.thread_id = chain.thread_id "
+    "  AND c.checkpoint_ns = chain.checkpoint_ns "
+    "  AND c.checkpoint_id = chain.parent_checkpoint_id "
     "  WHERE chain.parent_checkpoint_id IS NOT NULL"
     ")"
     "SELECT checkpoint_id, parent_checkpoint_id, type, checkpoint FROM chain"
